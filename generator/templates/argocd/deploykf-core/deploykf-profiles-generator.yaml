@@ -1,0 +1,41 @@
+{{<- $generator_folder_path := "manifests/deploykf-core/deploykf-profiles-generator" >}}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dkf-core--deploykf-profiles-generator
+  namespace: {{< .Values.argocd.namespace | quote >}}
+  labels:
+    app.kubernetes.io/name: deploykf-profiles-generator
+    app.kubernetes.io/component: deploykf-core
+    app.kubernetes.io/part-of: {{< print .Values.argocd.appNamePrefix "deploykf" | quote >}}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: {{< .Values.argocd.project | quote >}}
+  {{<- if .Values.argocd.source.plugin.enabled >}}
+  {{<- $output_helm_path := $generator_folder_path >}}
+  {{<- $output_helm_values_files := coll.Slice "values-overrides.yaml" >}}
+  source: {{< tmpl.Exec "argocd.plugin_source.helm" (dict "output_helm_path" $output_helm_path "output_helm_values_files" $output_helm_values_files) | yaml | toJSON >}}
+  {{<- else >}}
+  source:
+    repoURL: {{< .Values.argocd.source.repo.url | quote >}}
+    targetRevision: {{< .Values.argocd.source.repo.revision | quote >}}
+    path: {{< path.Join .Values.argocd.source.repo.path $generator_folder_path | quote >}}
+    helm:
+      ignoreMissingValueFiles: true
+      valueFiles:
+        - values-overrides.yaml
+  {{<- end >}}
+  destination:
+    {{<- if .Values.argocd.destination.name >}}
+    name: {{< .Values.argocd.destination.name | quote >}}
+    {{<- else >}}
+    server: {{< .Values.argocd.destination.server | quote >}}
+    {{<- end >}}
+    namespace: kubeflow
+  ignoreDifferences:
+    ## `rules` are aggregated when `aggregationRule.clusterRoleSelectors` is set
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+      jqPathExpressions:
+        - "select(.aggregationRule.clusterRoleSelectors | length > 0) | .rules"
